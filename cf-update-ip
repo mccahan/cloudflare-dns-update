@@ -1,0 +1,77 @@
+#!/usr/bin/php
+<?php
+
+if (count($argv) !== 5)
+{
+  die("Usage: ./cf-update-ip <email> <API key> <domain> <subdomain>\n");
+}
+
+$options = [
+  "ssl" => [
+    "verify_peer" => false,
+    "verify_peer_name" => false,
+  ]
+];
+$data = json_decode(file_get_contents('https://api.ipify.org/?format=json', false, stream_context_create($options)));
+
+if (!isset($data->ip) || !preg_match('/^\d+.\d+.\d+.\d+$/', $data->ip))
+  die("Could not fetch remote IP");
+
+$ip = $data->ip;
+
+// Get the ID for the domain
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones?name=' . urlencode($argv[3]));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+  'X-Auth-Key: ' . $argv[2],
+  'X-Auth-Email: ' . $argv[1],
+  'Content-Type: application/json',
+]);
+$result = curl_exec($ch);
+curl_close($ch);
+
+$result = json_decode($result);
+if ($result->success !== true)
+  die("Error retrieving CloudFlare zone: " . implode(', ' . $result->errors));
+$zoneID = $result->result[0]->id;
+
+// Get the ID for the record
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones/' . $zoneID . '/dns_records?type=A&name=' . urlencode($argv[4]));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+  'X-Auth-Key: ' . $argv[2],
+  'X-Auth-Email: ' . $argv[1],
+  'Content-Type: application/json',
+]);
+$result = curl_exec($ch);
+curl_close($ch);
+
+$result = json_decode($result);
+if ($result->success !== true)
+  die("Error retrieving CloudFlare record: " . implode(', ' . $result->errors));
+$recordID = $result->result[0]->id;
+$record = $result->result[0];
+unset($record->meta);
+unset($record->created_on);
+unset($record->modified_on);
+if ($result->result[0]->content == $ip)
+{
+  die("IP up to date\n");
+}
+
+// Update the record
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones/' . $zoneID . '/dns_records/' . $recordID);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+  'X-Auth-Key: ' . $argv[2],
+  'X-Auth-Email: ' . $argv[1],
+  'Content-Type: application/json',
+]);
+$record->content = $ip;
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($record));
+$result = curl_exec($ch);
+curl_close($ch);
