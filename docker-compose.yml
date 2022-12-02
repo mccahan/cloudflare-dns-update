@@ -1,0 +1,8 @@
+services:
+  cf-ip:
+    image: mccahan/cloudflare-dyndns-update
+    environment:
+      - EMAIL=${EMAIL}
+      - KEY=${KEY}
+      - DOMAIN=${DOMAIN}
+      - SUBDOMAIN=${SUBDOMAIN}

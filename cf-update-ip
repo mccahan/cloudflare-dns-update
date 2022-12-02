@@ -19,6 +19,8 @@ if (!isset($data->ip) || !preg_match('/^\d+.\d+.\d+.\d+$/', $data->ip))
 
 $ip = $data->ip;
 
+echo "Updating IP to {$ip}\n";
+
 // Get the ID for the domain
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones?name=' . urlencode($argv[3]));
@@ -33,7 +35,7 @@ curl_close($ch);
 
 $result = json_decode($result);
 if ($result->success !== true)
-  die("Error retrieving CloudFlare zone: " . implode(', ' . $result->errors));
+  die("Error retrieving CloudFlare zone: " . implode(', ', array_map(fn($e) => $e->message, $result->errors)) . "\n");
 $zoneID = $result->result[0]->id;
 
 // Get the ID for the record
