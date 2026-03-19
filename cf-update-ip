@@ -3,8 +3,13 @@
 
 if (count($argv) !== 5)
 {
-  die("Usage: ./cf-update-ip <email> <API key> <domain> <subdomain>\n");
+  die("Usage: ./cf-update-ip <email> <API token> <domain> <subdomain>\n");
 }
+
+$email = $argv[1];
+$token = $argv[2];
+$domain = $argv[3];
+$subdomain = $argv[4];
 
 $options = [
   "ssl" => [
@@ -21,43 +26,64 @@ $ip = $data->ip;
 
 echo "Updating IP to {$ip}\n";
 
+// Determine auth method - API tokens are typically 40 chars, Global API keys are 37
+// API tokens also don't need email, but we accept it for backwards compatibility
+$useBearer = strlen($token) >= 40 || strpos($token, '_') !== false;
+
+function getAuthHeaders($token, $email, $useBearer) {
+  if ($useBearer) {
+    return [
+      'Authorization: Bearer ' . $token,
+      'Content-Type: application/json',
+    ];
+  } else {
+    return [
+      'X-Auth-Key: ' . $token,
+      'X-Auth-Email: ' . $email,
+      'Content-Type: application/json',
+    ];
+  }
+}
+
 // Get the ID for the domain
 $ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones?name=' . urlencode($argv[3]));
+curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones?name=' . urlencode($domain));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-  'X-Auth-Key: ' . $argv[2],
-  'X-Auth-Email: ' . $argv[1],
-  'Content-Type: application/json',
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, getAuthHeaders($token, $email, $useBearer));
 $result = curl_exec($ch);
 curl_close($ch);
 
 $result = json_decode($result);
 if ($result->success !== true)
   die("Error retrieving CloudFlare zone: " . implode(', ', array_map(fn($e) => $e->message, $result->errors)) . "\n");
+if (empty($result->result))
+  die("Zone not found for domain: {$domain}\n");
 $zoneID = $result->result[0]->id;
+
+echo "Found zone ID: {$zoneID}\n";
 
 // Get the ID for the record
 $ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones/' . $zoneID . '/dns_records?type=A&name=' . urlencode($argv[4]));
+curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones/' . $zoneID . '/dns_records?type=A&name=' . urlencode($subdomain));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-  'X-Auth-Key: ' . $argv[2],
-  'X-Auth-Email: ' . $argv[1],
-  'Content-Type: application/json',
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, getAuthHeaders($token, $email, $useBearer));
 $result = curl_exec($ch);
 curl_close($ch);
 
 $result = json_decode($result);
 if ($result->success !== true)
-  die("Error retrieving CloudFlare record: " . implode(', ' . $result->errors));
+  die("Error retrieving CloudFlare record: " . implode(', ', array_map(fn($e) => $e->message, $result->errors)) . "\n");
+if (empty($result->result))
+  die("DNS record not found for: {$subdomain}\n");
+
 $recordID = $result->result[0]->id;
 $record = $result->result[0];
 unset($record->meta);
 unset($record->created_on);
 unset($record->modified_on);
+
+echo "Found record ID: {$recordID}, current IP: {$record->content}\n";
+
 if ($result->result[0]->content == $ip)
 {
   die("IP up to date\n");
@@ -68,12 +94,14 @@ $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, 'https://api.cloudflare.com/client/v4/zones/' . $zoneID . '/dns_records/' . $recordID);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-  'X-Auth-Key: ' . $argv[2],
-  'X-Auth-Email: ' . $argv[1],
-  'Content-Type: application/json',
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, getAuthHeaders($token, $email, $useBearer));
 $record->content = $ip;
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($record));
 $result = curl_exec($ch);
 curl_close($ch);
+
+$result = json_decode($result);
+if ($result->success !== true)
+  die("Error updating record: " . implode(', ', array_map(fn($e) => $e->message, $result->errors)) . "\n");
+
+echo "Successfully updated {$subdomain} to {$ip}\n";

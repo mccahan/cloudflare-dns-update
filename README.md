@@ -1,40 +1,51 @@
-CloudFlare DNS Update
----
+# CloudFlare DNS Update
 
-I built this script to run on a Raspberry Pi at my home to keep a CloudFlare DNS record pointed at my home IP address updated, much the same way one would use a dynamic IP service like DynDNS.
+A simple dynamic DNS updater for Cloudflare. Keeps a DNS record pointed at your current public IP address, similar to DynDNS.
 
-Command-Line or Cron Usage
------
+## Docker Usage (Recommended)
 
-To run, create a cronjob (mine runs every 4 hours, which is probably too often) to run the following:
-
-`./cf-update-ip <cloudflare email address> <cloudflare API key> <domain> <subdomain>`
-
-E.g. if you wanted to update myhome.mydomain.com you might run:
-
-`./cf-update-ip me@mydomain.com abcdefabcfed123123123123 mydomain.com myhome.mydomain.com`
-
-Portainer Usage
------
-
-This package includes a Docker image that runs this script once per hour, ideal for running on a Portainer (or other Docker) host to keep your IP address up to date. To install, use the following Docker Compose configuration, either replacing the configuration values in the config or adding corresponding environment variables.
-
-```
+```yaml
 services:
-  cf-ip:
-    image: mccahan/cloudflare-dyndns-update
+  cloudflare-dns-update:
+    image: ghcr.io/mccahan/cloudflare-dns-update:latest
+    container_name: cloudflare-dns-update
+    restart: unless-stopped
     environment:
-      - EMAIL=${EMAIL}
-      - KEY=${KEY}
-      - DOMAIN=${DOMAIN}
-      - SUBDOMAIN=${SUBDOMAIN}
+      - EMAIL=your-email@example.com
+      - KEY=your-cloudflare-api-token
+      - DOMAIN=example.com
+      - SUBDOMAIN=home.example.com
 ```
 
-Build and Deploy
------
+### Authentication
 
-```sh
-export DOCKER_DEFAULT_PLATFORM=linux/amd64
-docker build -t mccahan/cloudflare-dyndns-update:latest .
-docker push mccahan/cloudflare-dyndns-update:latest
+This script supports both authentication methods:
+
+- **API Token (recommended)**: Create a token with `Zone:DNS:Edit` permissions at [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
+- **Global API Key (legacy)**: Found at Cloudflare Dashboard → My Profile → API Tokens → Global API Key
+
+The script auto-detects which auth method to use based on the key format.
+
+## Command-Line Usage
+
+```bash
+./cf-update-ip <email> <API token/key> <domain> <subdomain>
 ```
+
+Example:
+```bash
+./cf-update-ip me@example.com abc123token example.com home.example.com
+```
+
+## Cron
+
+The Docker container runs the update script once on startup and then every hour via cron.
+
+## Building
+
+```bash
+docker build -t ghcr.io/mccahan/cloudflare-dns-update:latest .
+docker push ghcr.io/mccahan/cloudflare-dns-update:latest
+```
+
+Or use the GitHub Actions workflow which builds and pushes automatically on push to main/master.
