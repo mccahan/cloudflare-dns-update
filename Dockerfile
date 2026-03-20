@@ -1,5 +1,5 @@
-FROM docker/dhi/php:8-alpine3.22-fips-dev
-COPY . /usr/src/app
-WORKDIR /usr/src/app
-RUN echo '0  *  *  *  *    php /usr/src/app/cf-update-ip ${EMAIL} $KEY $DOMAIN $SUBDOMAIN' > /etc/crontabs/root
-CMD php /usr/src/app/cf-update-ip ${EMAIL} $KEY $DOMAIN $SUBDOMAIN && crond -f
+FROM cgr.dev/chainguard/php:latest-dev
+COPY . /app
+WORKDIR /app
+USER root
+CMD php /app/cf-update-ip ${EMAIL} $KEY $DOMAIN $SUBDOMAIN && while true; do sleep 3600 && php /app/cf-update-ip ${EMAIL} $KEY $DOMAIN $SUBDOMAIN; done
